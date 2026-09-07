@@ -3,7 +3,6 @@ import math
 import pandas as pd
 import customtkinter as ctk
 import matplotlib.pyplot as plt
-from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 # Configure CustomTkinter Theme
@@ -35,7 +34,7 @@ class MiningMapApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("Elite Dangerous - Surface Mining Tracker")
-        self.geometry("1150x750")
+        self.geometry("1250x750")
 
         self.df = load_data()
 
@@ -91,9 +90,9 @@ class DisplayPage(ctk.CTkFrame):
         super().__init__(parent)
         self.controller = controller
         self.active_spot_df = pd.DataFrame()
-        self.plotted_points = []  # Stores point details for interactive event handling
+        self.plotted_points = []
 
-        # Left Control Panel (Filters)
+        # Left Control Panel
         self.left_panel = ctk.CTkFrame(self, width=300)
         self.left_panel.pack(side="left", fill="y", padx=10, pady=10)
 
@@ -126,7 +125,6 @@ class DisplayPage(ctk.CTkFrame):
         self.rig_frame.pack(fill="x", padx=10, pady=5)
         self.rig_vars = {}
 
-        # Status Bar for Clipboard Notification
         self.status_label = ctk.CTkLabel(self.left_panel, text="Click a point to copy Lat/Long", font=("Arial", 11, "italic"))
         self.status_label.pack(fill="x", padx=10, pady=(15, 5))
 
@@ -241,7 +239,6 @@ class DisplayPage(ctk.CTkFrame):
 
             self.ax.annotate(f" {commodity_type} ({rig_count}R)", (theta, r), color='white', fontsize=8)
 
-            # Store metadata for event listener matching
             self.plotted_points.append({
                 "scatter": scatter_obj,
                 "type": commodity_type,
@@ -259,7 +256,6 @@ class DisplayPage(ctk.CTkFrame):
             for text in legend.get_texts():
                 text.set_color('white')
 
-        # Create invisible annotation box for hover effects
         self.annot = self.ax.annotate(
             "",
             xy=(0,0),
@@ -275,14 +271,12 @@ class DisplayPage(ctk.CTkFrame):
         self.canvas_widget = self.canvas.get_tk_widget()
         self.canvas_widget.pack(fill="both", expand=True)
 
-        # Bind Matplotlib interaction events
         self.canvas.mpl_connect("motion_notify_event", self.on_hover)
         self.canvas.mpl_connect("button_press_event", self.on_click)
 
         self.canvas.draw()
 
     def on_hover(self, event):
-        """Displays tooltip box when hovering over a scatter point."""
         if event.inaxes != self.ax:
             if self.annot.get_visible():
                 self.annot.set_visible(False)
@@ -307,7 +301,6 @@ class DisplayPage(ctk.CTkFrame):
             self.canvas.draw_idle()
 
     def on_click(self, event):
-        """Copies lat/long coordinates to the system clipboard on point click."""
         if event.inaxes != self.ax:
             return
 
@@ -318,7 +311,6 @@ class DisplayPage(ctk.CTkFrame):
                 long_val = pt_info["long"]
                 coord_text = f"{lat}, {long_val}"
 
-                # Copy to system clipboard via Tkinter
                 self.clipboard_clear()
                 self.clipboard_append(coord_text)
                 self.update()
@@ -449,6 +441,7 @@ class ManagePage(ctk.CTkFrame):
     def __init__(self, parent, controller):
         super().__init__(parent)
         self.controller = controller
+        self.editing_row = None  # Tracks currently edited row index
 
         ctk.CTkLabel(self, text="Database Records Overview", font=("Arial", 18, "bold")).pack(anchor="w", padx=15, pady=10)
 
@@ -466,45 +459,133 @@ class ManagePage(ctk.CTkFrame):
             ctk.CTkLabel(self.table_scroll, text="No records found in surfaceminingmap.csv").pack(pady=20)
             return
 
-        headers = ["Row", "System", "Planet", "Spot #", "Type", "Rigs", "Dir (°)", "Dist (km)", "Lat", "Long", "Action"]
+        headers = ["Row", "System", "Planet", "Spot #", "Type", "Rigs", "Dir (°)", "Dist (km)", "Lat", "Long", "Actions"]
 
         for col_idx, header in enumerate(headers):
             lbl = ctk.CTkLabel(self.table_scroll, text=header, font=("Arial", 12, "bold"))
-            lbl.grid(row=0, column=col_idx, padx=8, pady=5, sticky="ew")
+            lbl.grid(row=0, column=col_idx, padx=4, pady=5, sticky="ew")
+
+        col_keys = ["system", "planet", "mining_spot_number", "type", "rigs", "direction", "distance", "lat", "long"]
 
         for row_idx, row in df.iterrows():
-            values = [
-                str(row_idx + 1),
-                str(row["system"]),
-                str(row["planet"]),
-                str(row["mining_spot_number"]),
-                str(row["type"]),
-                str(row["rigs"]),
-                f"{float(row['direction']):.1f}",
-                f"{float(row['distance']):.2f}",
-                f"{float(row['lat']):.4f}",
-                f"{float(row['long']):.4f}"
-            ]
+            # Display Row Index
+            row_label = ctk.CTkLabel(self.table_scroll, text=str(row_idx + 1))
+            row_label.grid(row=row_idx + 1, column=0, padx=4, pady=3, sticky="ew")
 
-            for col_idx, val in enumerate(values):
-                cell = ctk.CTkLabel(self.table_scroll, text=val)
-                cell.grid(row=row_idx + 1, column=col_idx, padx=8, pady=3, sticky="ew")
+            if self.editing_row == row_idx:
+                # Render Row in Edit Mode
+                row_entries = {}
+                for col_idx, key in enumerate(col_keys):
+                    val = str(row[key])
+                    entry = ctk.CTkEntry(self.table_scroll, width=85)
+                    entry.insert(0, val)
+                    entry.grid(row=row_idx + 1, column=col_idx + 1, padx=2, pady=3, sticky="ew")
+                    row_entries[key] = entry
 
-            del_btn = ctk.CTkButton(
-                self.table_scroll,
-                text="Delete",
-                width=60,
-                fg_color="red",
-                hover_color="darkred",
-                command=lambda r=row_idx: self.delete_record(r)
-            )
-            del_btn.grid(row=row_idx + 1, column=len(headers) - 1, padx=5, pady=3)
+                # Action Buttons Frame
+                act_frame = ctk.CTkFrame(self.table_scroll, fg_color="transparent")
+                act_frame.grid(row=row_idx + 1, column=len(headers) - 1, padx=2, pady=3)
+
+                save_btn = ctk.CTkButton(
+                    act_frame,
+                    text="Save",
+                    width=45,
+                    fg_color="green",
+                    hover_color="darkgreen",
+                    command=lambda r=row_idx, e=row_entries: self.save_row(r, e)
+                )
+                save_btn.pack(side="left", padx=2)
+
+                cancel_btn = ctk.CTkButton(
+                    act_frame,
+                    text="Cancel",
+                    width=45,
+                    fg_color="gray",
+                    hover_color="darkgray",
+                    command=self.cancel_edit
+                )
+                cancel_btn.pack(side="left", padx=2)
+
+            else:
+                # Render Row in Read-Only Mode
+                values = [
+                    str(row["system"]),
+                    str(row["planet"]),
+                    str(row["mining_spot_number"]),
+                    str(row["type"]),
+                    str(row["rigs"]),
+                    f"{float(row['direction']):.1f}",
+                    f"{float(row['distance']):.2f}",
+                    f"{float(row['lat']):.4f}",
+                    f"{float(row['long']):.4f}"
+                ]
+
+                for col_idx, val in enumerate(values):
+                    cell = ctk.CTkLabel(self.table_scroll, text=val)
+                    cell.grid(row=row_idx + 1, column=col_idx + 1, padx=4, pady=3, sticky="ew")
+
+                # Action Buttons Frame
+                act_frame = ctk.CTkFrame(self.table_scroll, fg_color="transparent")
+                act_frame.grid(row=row_idx + 1, column=len(headers) - 1, padx=2, pady=3)
+
+                edit_btn = ctk.CTkButton(
+                    act_frame,
+                    text="Edit",
+                    width=45,
+                    fg_color="#1f538d",
+                    hover_color="#14375e",
+                    command=lambda r=row_idx: self.start_edit(r)
+                )
+                edit_btn.pack(side="left", padx=2)
+
+                del_btn = ctk.CTkButton(
+                    act_frame,
+                    text="Delete",
+                    width=45,
+                    fg_color="red",
+                    hover_color="darkred",
+                    command=lambda r=row_idx: self.delete_record(r)
+                )
+                del_btn.pack(side="left", padx=2)
+
+    def start_edit(self, row_index):
+        self.editing_row = row_index
+        self.load_table_data()
+
+    def cancel_edit(self):
+        self.editing_row = None
+        self.load_table_data()
+
+    def save_row(self, row_index, entry_dict):
+        try:
+            df = load_data()
+
+            # Extract and update entry values
+            df.at[row_index, "system"] = entry_dict["system"].get().strip()
+            df.at[row_index, "planet"] = entry_dict["planet"].get().strip()
+            df.at[row_index, "mining_spot_number"] = entry_dict["mining_spot_number"].get().strip()
+            df.at[row_index, "type"] = entry_dict["type"].get().strip()
+            df.at[row_index, "rigs"] = entry_dict["rigs"].get().strip()
+            df.at[row_index, "direction"] = float(entry_dict["direction"].get())
+            df.at[row_index, "distance"] = float(entry_dict["distance"].get())
+            df.at[row_index, "lat"] = float(entry_dict["lat"].get())
+            df.at[row_index, "long"] = float(entry_dict["long"].get())
+
+            df.to_csv(CSV_FILE, index=False)
+
+            self.editing_row = None
+            self.load_table_data()
+            print(f"Row {row_index + 1} updated successfully.")
+
+        except ValueError:
+            print("Error: Please enter valid numerical values for direction, distance, latitude, and longitude.")
 
     def delete_record(self, row_index):
         df = load_data()
         if row_index in df.index:
             df = df.drop(index=row_index).reset_index(drop=True)
             df.to_csv(CSV_FILE, index=False)
+            self.editing_row = None
             self.load_table_data()
             print(f"Record at row {row_index + 1} deleted successfully.")
 
